@@ -1,2 +1,6 @@
 /.env
 venv
+debug
+qdrant_data
+data
+__pycache__
