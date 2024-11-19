@@ -56,7 +56,7 @@ PoC of Almoravid in progress, because of PoC status, contains almost no configur
 1. Install prerequisities
 
     ```bash
-    pip install -qU llama-index-embeddings-openai llama-index-readers-file python-dotenv qdrant_client sentence-transformers openai rouge-score
+    pip install -qU llama-index-embeddings-openai llama-index-readers-file python-dotenv qdrant_client sentence-transformers openai rouge-score langchain-openai
     ```
 
 

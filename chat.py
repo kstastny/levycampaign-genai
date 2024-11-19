@@ -49,8 +49,23 @@ def retrieveDocuments (query):
 
     return sorted_documents
 
+def retriever(query):
+    documents = retrieveDocuments(query)
+    context = documents[0].payload["source"]
 
-def generateAnswer (context, query):
+    now = datetime.now()
+    formatted_date = now.strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
+    with open(f"debug/qa/{formatted_date}.txt", "w", encoding="utf-8") as file:
+        file.write("Query: " + user_query + "\n")
+        file.write("\n")
+        file.write("--------------------")
+        file.write("\n")
+        file.write("Context: " + context + "\n")    
+
+    return context
+
+
+def generateAnswerDirect (context, query):
     answer = openaiclient.chat.completions.create(
         model = llmmodel,
         messages = [
@@ -66,11 +81,43 @@ def generateAnswer (context, query):
     )
     return answer.choices[0].message.content
 
-def askllm(query):
-    documents = retrieveDocuments(query)
-    context = documents[0].payload["source"]
-    answer = generateAnswer(context, query)
+
+def askllmDirect(query):
+    context = retriever(query)
+    answer = generateAnswerDirect(context, query)
     return context, answer
+
+
+
+
+
+## Langchain
+from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI    
+
+prompt = PromptTemplate.from_template("""You are an expert player of Levy & Campaign games, particularly Almoravid. You are helpful and always willing to explain the rules and strategies of the game.
+                    Please explain the rules based on the context only.
+                    If you don't know the answer, say I don't know. \nQuestion: {question} \nContext: {context} \nAnswer:""")
+
+llm = ChatOpenAI(model=llmmodel)
+rag_chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+def askllmLangchain (query):
+    #return rag_chain.invoke(question=query) # returns extra information
+    return "<<TBD CONTEXT>>", rag_chain.invoke(query)
+
+def askllmStream (query):
+    return rag_chain.stream(query)
+
+# choose how the answer will be generated
+askllm = askllmLangchain
 
 def test():
     print("Running self-evaluation test...")
@@ -152,19 +199,25 @@ while user_query != "exit":
         test()
     elif user_query != "":
         #print ("Echo Chamber: ", user_query)
-        context, answer = askllm(user_query)
+        #context, answer = askllm(user_query)
 
-        now = datetime.now()
-        formatted_date = now.strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
+        
+        answer = askllmStream(user_query)
+        for chunk in answer:
+            print(chunk, end="", flush=True)
+        print("\n")
+
+        # now = datetime.now()
+        # formatted_date = now.strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
 
 
-        with open(f"debug/qa/{formatted_date}.txt", "w", encoding="utf-8") as file:
-            file.write("Query: " + user_query + "\n")
-            file.write("Answer: " + answer + "\n")
-            file.write("\n")
-            file.write("--------------------")
-            file.write("\n")
-            file.write("Context: " + context + "\n")
+        # with open(f"debug/qa/{formatted_date}.txt", "w", encoding="utf-8") as file:
+        #     file.write("Query: " + user_query + "\n")
+        #     file.write("Answer: " + answer + "\n")
+        #     file.write("\n")
+        #     file.write("--------------------")
+        #     file.write("\n")
+        #     file.write("Context: " + context + "\n")
 
         print("Answer: ", answer)
         print("")
