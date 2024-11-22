@@ -49,18 +49,57 @@ def retrieveDocuments (query):
 
     return sorted_documents
 
+
+# Reranking
+import numpy as np
+import torch
+
+# https://www.sbert.net/examples/applications/cross-encoder/README.html
+from sentence_transformers.cross_encoder import CrossEncoder
+
+# Pre-trained cross encoder
+ranking_model = CrossEncoder("cross-encoder/ms-marco-TinyBERT-L-2-v2", default_activation_function=torch.nn.Sigmoid())
+#ranking_model = CrossEncoder("cross-encoder/stsb-distilroberta-base", default_activation_function=torch.nn.Sigmoid())
+
+def rerankDocuments (query, documents):
+
+    docsource = [doc.payload["source"] for doc in documents]
+    ranks = ranking_model.rank(query, docsource)
+    sorted_ranks = sorted(ranks, key=lambda x: x['score'], reverse=True)
+
+    return [ documents[rank['corpus_id']] for rank in sorted_ranks ]
+
+
 documents_to_retrieve = 3
+use_reranking = True
 
 def retriever(query):
     documents = retrieveDocuments(query)
     #context = documents[0].payload["source"]
 
-    context = "\n\n---\n\n".join([doc.payload["source"] for doc in documents[:documents_to_retrieve]])
+    if use_reranking:
+        #print("First retrieved: ", documents[0].payload["source"][:80])
+        #print(len(documents[0].payload["source"]))
+        #print("\n")
+        #print("\n")
+
+        reranked_documents = rerankDocuments(query, documents)
+        context = "\n\n---\n\n".join([doc.payload["source"] for doc in reranked_documents[:documents_to_retrieve]])
+        
+
+        #print("First reranked: ", reranked_documents[0].payload["source"][:80])
+        #print(len(reranked_documents[0].payload["source"]))
+        #print("\n")
+        #print("\n")
+
+    else:
+        context = "\n\n---\n\n".join([doc.payload["source"] for doc in documents[:documents_to_retrieve]])
+
 
     now = datetime.now()
     formatted_date = now.strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
     with open(f"debug/qa/{formatted_date}.txt", "w", encoding="utf-8") as file:
-        file.write("Query: " + user_query + "\n")
+        file.write("Query: " + query + "\n")
         file.write("\n")
         file.write("--------------------")
         file.write("\n")
@@ -77,6 +116,7 @@ def generateAnswerDirect (context, query):
                 "content": 
                   """You are an expert player of Levy & Campaign games, particularly Almoravid.
                     You are helpful and always willing to explain the rules and strategies of the game.
+                    Use maximum of 300 characters and be concise.
                     Please explain the rules based on the context only. If you don't know the answer, say I don't know."""
             },
             {"role": "system", "content": context},
@@ -148,7 +188,9 @@ def test():
          """No, a Muslim cannot attack a Neutral locale. Strongholds with a Neutral status cannot be besieged"""),
         ("What does it mean when the Lord is Laden?", 
          """Laden Lord carries more Provender than they can normally manage. Lord is Laden when carrying Loot, using Cart to move
-         over a Pass or when a Cart or Mule carries two Provender."""),           
+         over a Pass or when a Cart or Mule carries two Provender."""),
+         ("Tell me in what years does the game take place",
+          """The game takes place during the years 1085 and 1086""")
          
     ]
 
