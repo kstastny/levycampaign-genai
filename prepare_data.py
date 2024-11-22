@@ -39,7 +39,6 @@ elif splitter_name == "SemanticSplitter":
         #,sentence_splitter=SentenceSplitter(chunk_size=1024)
     )
 
-    #TODO should work with Document objects instead?
     def split_text (text):
         #TODO work with related nodes? use VectorStore directly https://docs.llamaindex.ai/en/stable/examples/node_parsers/semantic_chunking/#setup-query-engine
         nodes = splitter.get_nodes_from_documents([Document(text=text, id="1")], show_progress=True)

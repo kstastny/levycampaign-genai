@@ -39,7 +39,7 @@ def retrieveDocuments (query):
     hits = qdrant.search(
         collection_name=collection_name,
         query_vector=embeddingModel.encode(query).tolist(),
-        limit=5,
+        limit=10,
     )
 
     sorted_documents = sorted(hits, key=lambda hit: hit.score, reverse=True)
@@ -49,8 +49,27 @@ def retrieveDocuments (query):
 
     return sorted_documents
 
+documents_to_retrieve = 3
 
-def generateAnswer (context, query):
+def retriever(query):
+    documents = retrieveDocuments(query)
+    #context = documents[0].payload["source"]
+
+    context = "\n\n---\n\n".join([doc.payload["source"] for doc in documents[:documents_to_retrieve]])
+
+    now = datetime.now()
+    formatted_date = now.strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
+    with open(f"debug/qa/{formatted_date}.txt", "w", encoding="utf-8") as file:
+        file.write("Query: " + user_query + "\n")
+        file.write("\n")
+        file.write("--------------------")
+        file.write("\n")
+        file.write("Context: " + context + "\n")    
+
+    return context
+
+
+def generateAnswerDirect (context, query):
     answer = openaiclient.chat.completions.create(
         model = llmmodel,
         messages = [
@@ -66,11 +85,43 @@ def generateAnswer (context, query):
     )
     return answer.choices[0].message.content
 
-def askllm(query):
-    documents = retrieveDocuments(query)
-    context = documents[0].payload["source"]
-    answer = generateAnswer(context, query)
-    return context, answer
+
+def askllmDirect(query):
+    context = retriever(query)
+    answer = generateAnswerDirect(context, query)
+    return answer
+
+
+
+
+
+## Langchain
+from langchain.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import ChatOpenAI    
+
+prompt = PromptTemplate.from_template("""You are an expert player of Levy & Campaign games, particularly Almoravid. You are helpful and always willing to explain the rules and strategies of the game.
+                    Please explain the rules based on the context only.
+                    If you don't know the answer, say I don't know. \nQuestion: {question} \nContext: {context} \nAnswer:""")
+
+llm = ChatOpenAI(model=llmmodel)
+rag_chain = (
+    {"context": retriever, "question": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+def askllmLangchain (query):
+    #return rag_chain.invoke(question=query) # returns extra information
+    return rag_chain.invoke(query)
+
+def askllmStream (query):
+    return rag_chain.stream(query)
+
+# choose how the answer will be generated
+askllm = askllmLangchain
 
 def test():
     print("Running self-evaluation test...")
@@ -78,6 +129,7 @@ def test():
     test_queries_answers = [
         ("What is the objective of the game?","The objective of the game is to score the most points by the end of the given scenario."),
         ("When does the game take place?", "The game takes place during mediaval reconquista in Iberian peninsula, specifically in the years 1085-1086"),
+        ("In what historical period does the game take place?", "The game takes place during mediaval reconquista in Iberian peninsula, specifically in the years 1085-1086"),
         ("What do the opponents represent?", "The opponents represent the muslim Taifas (green color) and the Christian forces (yellow) led by Alphonso VI of Leon and Castile"),
         ("Tell me what this game is about", 
          """Almoravid is a historical boardgame from the Levy&Campaign series that represents a period of conquest in the second half of 11th century.
@@ -111,7 +163,7 @@ def test():
 
     with open(f"debug/test/{formatted_date}.txt", "w", encoding="utf-8") as file:
         for query, expected_answer in test_queries_answers:
-            context, answer = askllm(query)
+            answer = askllm(query)
             scores = scorer.score(expected_answer, answer)
             rouge1_scores.append(scores['rouge1'].fmeasure)
             rouge2_scores.append(scores['rouge2'].fmeasure)
@@ -152,22 +204,16 @@ while user_query != "exit":
         test()
     elif user_query != "":
         #print ("Echo Chamber: ", user_query)
-        context, answer = askllm(user_query)
+        #context, answer = askllm(user_query)
+        #print("Answer: ", answer)
+        
+        answer = askllmStream(user_query)
+        for chunk in answer:
+            print(chunk, end="", flush=True)
+        print("\n")
 
-        now = datetime.now()
-        formatted_date = now.strftime("%Y-%m-%d-%H-%M-%S-%f")[:-3]
-
-
-        with open(f"debug/qa/{formatted_date}.txt", "w", encoding="utf-8") as file:
-            file.write("Query: " + user_query + "\n")
-            file.write("Answer: " + answer + "\n")
-            file.write("\n")
-            file.write("--------------------")
-            file.write("\n")
-            file.write("Context: " + context + "\n")
-
-        print("Answer: ", answer)
-        print("")
+        
+        
 
     user_query = input(" > ")
 
